@@ -41,8 +41,7 @@ export default class Avalanche {
    * @param derivation_path a path in BIP 32 format
    * @return a buffer with a public key, and TODO: should be address, not public key
    * @example
-   * const result = await avalanche.getWalletPublicKey("44'/9000'/0'/0/0");
-   * const publicKey = result;
+   * await avalanche.getWalletPublicKey("44'/9000'/0'/0/0");
    */
   async getWalletPublicKey(derivation_path: string): Promise<Buffer> {
     const bipPath = BIPPath.fromString(derivation_path).toPathArray();
@@ -67,10 +66,9 @@ export default class Avalanche {
    * get extended public key for a given BIP 32 path.
    *
    * @param derivation_path a path in BIP 32 format
-   * @return an object containing an extended public key
+   * @return an object with a buffer for the public key data and a buffer for the chain code
    * @example
-   * const result = await avalanche.getWalletPublicKey("44'/9000'/0'/0/0");
-   * const publicKey = result;
+   * await avalanche.getWalletExtendedPublicKey("44'/9000'/0'/0/0");
    */
   async getWalletExtendedPublicKey(derivation_path: string): Promise<{
     public_key: Buffer,
@@ -92,32 +90,33 @@ export default class Avalanche {
     const response = await this.transport.send(cla, ins, p1, p2, data);
     const publicKeyLength = response[0];
     const chainCodeOffset = 2+publicKeyLength;
-    const chainCodeLength = response[1+publicKeyLength];
+    const chainCodeLength = response[1 + publicKeyLength];
     return {
       public_key: response.slice(1, 1 + publicKeyLength),
-      chain_code: response.slice(chainCodeOffset, chainCodeOffset+chainCodeLength),
+      chain_code: response.slice(chainCodeOffset, chainCodeOffset + chainCodeLength),
     };
   }
 
   /**
    * Sign a hash with a given BIP-32 path.
    *
-   * @param derivation_path a path in BIP 32 format
-   * @param hash hex-encoded hash to sign
-   * @return an signature object
+   * @param derivation_path a path in BIP-32 format
+   * @param hash 32-byte buffer containing hash of a transaction
+   * @return a buffer with the signature data
    * @example
-   * const signature = await avalanche.signHash("44'/9000'/0'/0/0", "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
+   * await avalanche.signHash(
+   *   "44'/9000'/0'/0/0",
+   *   Buffer.from("0000000000000000000000000000000000000000000000000000000000000000", "hex")
+   * );
    */
   async signHash(
     derivation_path: string,
-    hash: string
+    hash: Buffer,
   ): Promise<{
     hash: Buffer,
     signature: Buffer
   }> {
     const bipPath = BIPPath.fromString(derivation_path).toPathArray();
-    // TODO: It would be nice to have either Buffer or string as parameter
-    const rawTx = Buffer.from(hash, "hex");
 
     let rawPath = Buffer.alloc(1 + bipPath.length * 4);
     rawPath.writeInt8(bipPath.length, 0);
@@ -126,18 +125,18 @@ export default class Avalanche {
     });
     await this.transport.send(0x80, this.INS_SIGN_HASH, 0x00, 0x00, rawPath);
 
-    const txFullChunks = Math.floor(rawTx.length / this.MAX_APDU_SIZE);
+    const txFullChunks = Math.floor(hash.length / this.MAX_APDU_SIZE);
     for (let i = 0; i < txFullChunks; i++) {
-      const data = rawTx.slice(i*this.MAX_APDU_SIZE, (i+1)*this.MAX_APDU_SIZE);
+      const data = hash.slice(i*this.MAX_APDU_SIZE, (i+1)*this.MAX_APDU_SIZE);
       await this.transport.send(0x80, this.INS_SIGN_HASH, 0x01, 0x00, data);
     }
 
-    const lastOffset = Math.floor(rawTx.length / this.MAX_APDU_SIZE) * this.MAX_APDU_SIZE;
-    const lastData = rawTx.slice(lastOffset, lastOffset+this.MAX_APDU_SIZE);
+    const lastOffset = Math.floor(hash.length / this.MAX_APDU_SIZE) * this.MAX_APDU_SIZE;
+    const lastData = hash.slice(lastOffset, lastOffset+this.MAX_APDU_SIZE);
     const response = await this.transport.send(0x80, this.INS_SIGN_HASH, 0x81, 0x00, lastData);
 
     const responseHash = response.slice(0, 32);
-    if (responseHash != hash) {
+    if (!responseHash.equals(hash)) {
       throw "Signed hash does not match input hash!";
     }
 
@@ -152,25 +151,24 @@ export default class Avalanche {
    *
    * @return an object with a version
    * @example
-   * const result = await avalanche.getAppConfiguration();
+   * console.log(await avalanche.getAppConfiguration());
    *
    * {
    *   "version": "1.0.3",
-   *   "commit": "0000000000000000000000000000000000000000"
+   *   "commit": "0000000000000000000000000000000000000000",
    *   "name": "Avax"
    * }
    */
   async getAppConfiguration(): Promise<{
     version: string,
     commit: string,
-    name: string
+    name: string,
   }> {
     const data: Buffer = await this.transport.send(0x80, this.INS_VERSION, 0x00, 0x00);
-    console.log(data);
 
     const eatNBytes = function(input, n) {
-      const out = input.slice(0, 3);
-      return [out, input.slice(3)];
+      const out = input.slice(0, n);
+      return [out, input.slice(n)];
     };
 
     const eatWhile = function(input, f) {
@@ -201,13 +199,12 @@ export default class Avalanche {
    *
    * @return a byte string
    * @example
-   * const id = await avalanche.getWalletId();
+   * console.log((await avalanche.getWalletId()).toString("hex"));
    *
-   * "0x69c46b6dd072a2693378ef4f5f35dcd82f826dc1fdcc891255db5870f54b06e6"
+   * 79c46bc3
    */
   async getWalletId(): Promise<Buffer> {
     const result = await this.transport.send(0x80, this.INS_GET_WALLET_ID, 0x00, 0x00);
-
-    return result.slice(0,-2);
+    return result.slice(0, -2);
   }
 }
