@@ -22,7 +22,7 @@
     "access": "public"
   },
   "main": "lib/Avalanche.js",
-  "module": "lib-es/Avalanche.js",
+  "module": "lib/Avalanche.js",
   "license": "Apache-2.0",
   "dependencies": {
     "@ledgerhq/hw-transport": "^5.9.0",
@@ -37,7 +37,6 @@
     "babel-preset-flow": "^6.23.0",
     "babel-preset-react": "^6.24.1",
     "babel-preset-stage-0": "^6.24.1",
-    "flow-bin": "^0.109.0",
     "flow-copy-source": "^2.0.8",
     "flow-mono-cli": "^1.5.0",
     "flow-typed": "^2.6.1",
@@ -52,6 +51,5 @@
     "prepare": "bash script/build.sh",
     "watch": "bash script/watch.sh",
     "doc": "bash script/doc.sh"
-  },
-  "gitHead": "fca2c7ce74fdb88df4d59dca4cc0e668410d66af"
+  }
 }
