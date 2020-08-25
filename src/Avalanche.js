@@ -20,6 +20,7 @@ export default class Avalanche {
   INS_PROMPT_PUBLIC_KEY = 0x02;
   INS_PROMPT_EXT_PUBLIC_KEY = 0x03;
   INS_SIGN_HASH = 0x04;
+  INS_SIGN_TRANSACTION = 0x05;
 
   constructor(transport: Transport<*>, scrambleKey: string = "Avalanche") {
     this.transport = transport;
@@ -146,6 +147,51 @@ export default class Avalanche {
     };
   }
 
+  /**
+   * Sign a transaction with a given BIP-32 path.
+   *
+   * @param derivation_path a path in BIP-32 format
+   * @param txn binary of the transaction
+   * @return a buffer with the signature data
+   * @example
+   * await avalanche.signTransaction(
+   *   "44'/9000'/0'/0/0",
+   *   Buffer.from("0000000000000000000000000000000000000000000000000000000000000000", "hex")
+   * );
+   */
+  async signTransaction(
+    derivation_path: string,
+    txn: Buffer,
+  ): Promise<{
+    hash: Buffer,
+    signature: Buffer
+  }> {
+    const bipPath = BIPPath.fromString(derivation_path).toPathArray();
+
+    let rawPath = Buffer.alloc(1 + bipPath.length * 4);
+    rawPath.writeInt8(bipPath.length, 0);
+    bipPath.forEach((segment, index) => {
+      rawPath.writeUInt32BE(segment, 1 + index * 4);
+    });
+    await this.transport.send(0x80, this.INS_SIGN_TRANSACTION, 0x00, 0x00, rawPath);
+
+    const txFullChunks = Math.floor(txn.length / this.MAX_APDU_SIZE);
+    for (let i = 0; i < txFullChunks; i++) {
+      const data = txn.slice(i*this.MAX_APDU_SIZE, (i+1)*this.MAX_APDU_SIZE);
+      await this.transport.send(0x80, this.INS_SIGN_TRANSACTION, 0x01, 0x00, data);
+    }
+
+    const lastOffset = Math.floor(txn.length / this.MAX_APDU_SIZE) * this.MAX_APDU_SIZE;
+    const lastData = txn.slice(lastOffset, lastOffset+this.MAX_APDU_SIZE);
+    const response = await this.transport.send(0x80, this.INS_SIGN_TRANSACTION, 0x81, 0x00, lastData);
+
+    const responseHash = response.slice(0, 32);
+
+    return {
+      hash: responseHash,
+      signature: response.slice(32, -2),
+    };
+  }
   /**
    * Get the version of the Avalanche app installed on the hardware device
    *
