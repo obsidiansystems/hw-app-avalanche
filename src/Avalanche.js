@@ -31,16 +31,18 @@ export default class Avalanche {
   ) {
     this.transport = transport;
     this.logger = logger;
-    transport.decorateAppAPIMethods(
-      this,
-      [
-        "getAppConfiguration",
-        "getWalletId",
-        "getWalletPublicKey",
-        "signHash"
-      ],
-      scrambleKey
-    );
+    if (scrambleKey) {
+      transport.decorateAppAPIMethods(
+        this,
+        [
+          "getAppConfiguration",
+          "getWalletId",
+          "getWalletPublicKey",
+          "signHash"
+        ],
+        scrambleKey
+      );
+    }
   }
 
   /**
