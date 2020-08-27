@@ -50,6 +50,7 @@
     "build": "bash script/build.sh",
     "prepare": "bash script/build.sh",
     "watch": "bash script/watch.sh",
-    "doc": "bash script/doc.sh"
+    "doc": "bash script/doc.sh",
+    "prepack": "bash script/build.sh"
   }
 }
