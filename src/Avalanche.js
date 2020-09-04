@@ -2,6 +2,7 @@
 
 import type Transport from "@ledgerhq/hw-transport";
 import BIPPath from "bip32-path";
+import createHash from 'create-hash';
 
 /**
  * Avalanche API
@@ -41,6 +42,7 @@ export default class Avalanche {
           "getWalletExtendedPublicKey",
           "getWalletId",
           "signHash",
+          "signTransaction",
         ],
         scrambleKey
       );
@@ -102,7 +104,7 @@ export default class Avalanche {
   }
 
   /**
-   * Sign a hash with a given BIP-32 path.
+   * Sign a hash with a given set of BIP-32 paths.
    *
    * @param derivationPathPrefix a BIP-32 path that will act as the prefix to all other signing paths.
    * @param derivationPathSuffixes an array of BIP-32 path suffixes that will be
@@ -134,63 +136,70 @@ export default class Avalanche {
       throw "Ledger reported a hash that does not match the input hash!";
     }
 
-    let resultMap: Map<string, Buffer> = new Map();
-    for (let ix = 0; ix < derivationPathSuffixes.length; ix++) {
-      const suffix = derivationPathSuffixes[ix];
-      this.logger("Signing with " + suffix.toString(true));
-      const message: Buffer = this.encodeBip32Path(suffix);
-      const isLastMessage: Boolean = ix >= derivationPathSuffixes.length - 1;
-      const signatureData = await this.transport.send(this.CLA, this.INS_SIGN_HASH, isLastMessage ? 0x81 : 0x01, 0x00, message);
-      resultMap.set(suffix.toString(true), signatureData.slice(0, -2));
-    };
-    return resultMap;
+    return this._collectSignaturesFromSuffixes(derivationPathSuffixes, this.INS_SIGN_HASH, 0x01, 0x81);
   }
 
   /**
-   * Sign a transaction with a given BIP-32 path.
+   * Sign a transaction with a given set of BIP-32 paths.
    *
-   * @param derivation_path a path in BIP-32 format
+   * @param derivationPathPrefix a BIP-32 path that will act as the prefix to all other signing paths.
+   * @param derivationPathSuffixes an array of BIP-32 path suffixes that will be
+   *                               appended to the prefix to form the final path for signing.
    * @param txn binary of the transaction
-   * @return a buffer with the signature data
+   * @return an object with a hash of the transaction and a map of path suffixes (as strings) to signature buffers
    * @example
-   * await avalanche.signTransaction(
-   *   "44'/9000'/0'/0/0",
-   *   Buffer.from("0000000000000000000000000000000000000000000000000000000000000000", "hex")
+   * const signatures = await avalanche.signTransaction(
+   *   BIPPath.fromString("44'/9000'/0'"),
+   *   [BIPPath.fromString("0/0")],
+   *   Buffer.from("...", "hex"));
    * );
    */
   async signTransaction(
-    derivation_path: string,
-    txn: Buffer,
-  ): Promise<{
-    hash: Buffer,
-    signature: Buffer
-  }> {
-    const bipPath = BIPPath.fromString(derivation_path).toPathArray();
+    derivationPathPrefix: BIPPath,
+    derivationPathSuffixes: Array<BIPPath>,
+    txn: Buffer
+  ): Promise<{hash: Buffer, signatures: Map<string, Buffer>}> {
 
-    let rawPath = Buffer.alloc(1 + bipPath.length * 4);
-    rawPath.writeInt8(bipPath.length, 0);
-    bipPath.forEach((segment, index) => {
-      rawPath.writeUInt32BE(segment, 1 + index * 4);
-    });
-    await this.transport.send(0x80, this.INS_SIGN_TRANSACTION, 0x00, 0x00, rawPath);
+    const SIGN_TRANSACTION_SECTION_PREAMBLE            = 0x00;
+    const SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK       = 0x01;
+    const SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK_LAST  = 0x81;
+    const SIGN_TRANSACTION_SECTION_SIGN_WITH_PATH      = 0x02;
+    const SIGN_TRANSACTION_SECTION_SIGN_WITH_PATH_LAST = 0x82;
+
+    const preamble = Buffer.concat([
+      this.uInt8Buffer(derivationPathSuffixes.length),
+      this.encodeBip32Path(derivationPathPrefix)
+    ]);
+
+    await this.transport.send(this.CLA, this.INS_SIGN_TRANSACTION, SIGN_TRANSACTION_SECTION_PREAMBLE, 0x00, preamble);
 
     const txFullChunks = Math.floor(txn.length / this.MAX_APDU_SIZE);
     for (let i = 0; i < txFullChunks; i++) {
       const data = txn.slice(i*this.MAX_APDU_SIZE, (i+1)*this.MAX_APDU_SIZE);
-      await this.transport.send(0x80, this.INS_SIGN_TRANSACTION, 0x01, 0x00, data);
+      await this.transport.send(this.CLA, this.INS_SIGN_TRANSACTION, SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK, 0x00, data);
     }
 
     const lastOffset = Math.floor(txn.length / this.MAX_APDU_SIZE) * this.MAX_APDU_SIZE;
     const lastData = txn.slice(lastOffset, lastOffset+this.MAX_APDU_SIZE);
-    const response = await this.transport.send(0x80, this.INS_SIGN_TRANSACTION, 0x81, 0x00, lastData);
+    const transactionHashData = await this.transport.send(this.CLA, this.INS_SIGN_TRANSACTION, SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK_LAST, 0x00, lastData);
+    const responseHash = transactionHashData.slice(0, 32);
 
-    const responseHash = response.slice(0, 32);
+    const expectedHash = Buffer.from(createHash('sha256').update(txn).digest());
+    if (!responseHash.equals(expectedHash)) {
+      throw "Ledger reported a hash that does not match the expected transaction hash!";
+    }
 
     return {
       hash: responseHash,
-      signature: response.slice(32, -2),
+      signatures: await this._collectSignaturesFromSuffixes(
+        derivationPathSuffixes,
+        this.INS_SIGN_TRANSACTION,
+        SIGN_TRANSACTION_SECTION_SIGN_WITH_PATH,
+        SIGN_TRANSACTION_SECTION_SIGN_WITH_PATH_LAST,
+      )
     };
   }
+
   /**
    * Get the version of the Avalanche app installed on the hardware device
    *
@@ -253,6 +262,18 @@ export default class Avalanche {
     return result.slice(0, -2);
   }
 
+  async _collectSignaturesFromSuffixes(suffixes: Array<BIPPath>, ins: int, p1NotDone: int, p1Done: int) {
+    let resultMap: Map<string, Buffer> = new Map();
+    for (let ix = 0; ix < suffixes.length; ix++) {
+      const suffix = suffixes[ix];
+      this.logger("Signing with " + suffix.toString(true));
+      const message: Buffer = this.encodeBip32Path(suffix);
+      const isLastMessage: Boolean = ix >= suffixes.length - 1;
+      const signatureData = await this.transport.send(this.CLA, ins, isLastMessage ? p1Done : p1NotDone, 0x00, message);
+      resultMap.set(suffix.toString(true), signatureData.slice(0, -2));
+    };
+    return resultMap;
+  }
 
   uInt8Buffer(uint8: int): Buffer {
     let buff = Buffer.alloc(1);
