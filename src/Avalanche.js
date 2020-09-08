@@ -7,7 +7,7 @@ import BIPPath from "bip32-path";
  * Avalanche API
  *
  * @example
- * import Avalanche from "@ledgerhq/hw-app-avalanche";
+ * import Avalanche from "@obsidiansystems/hw-app-avalanche";
  * const avalanche = new Avalanche(transport);
  */
 export default class Avalanche {

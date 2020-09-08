@@ -1,7 +1,7 @@
 [Github](https://github.com/LedgerHQ/ledgerjs/),
 [Ledger Devs Slack](https://ledger-dev.slack.com/)
 
-## @ledgerhq/hw-app-avalanche
+## @obsidiansystems/hw-app-avalanche
 
 [Ledger Hardware Wallet](https://www.ledger.com/) JavaScript bindings for [Avalanche](https://www.avalabs.org/), based on [LedgerJS](https://github.com/LedgerHQ/ledgerjs).
 
@@ -11,7 +11,7 @@ Here is a sample app for Node:
 
 ```javascript
 const Transport = require("@ledgerhq/hw-transport-node-hid").default;
-const Avalanche = require("@ledgerhq/hw-app-avalanche").default;
+const Avalanche = require("@obsidiansystems/hw-app-avalanche").default;
 
 const getWalletId = async () => {
   const avalanche = new Avalanche(await Transport.create());
@@ -77,7 +77,7 @@ Avalanche API for Ledger
 #### Examples
 
 ```javascript
-import Avalanche from "@ledgerhq/hw-app-avalanche";
+import Avalanche from "@obsidiansystems/hw-app-avalanche";
 const avalanche = new Avalanche(transport);
 ```
 
