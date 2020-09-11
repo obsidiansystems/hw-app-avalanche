@@ -173,17 +173,23 @@ export default class Avalanche {
 
     await this.transport.send(this.CLA, this.INS_SIGN_TRANSACTION, SIGN_TRANSACTION_SECTION_PREAMBLE, 0x00, preamble);
 
-    const txFullChunks = Math.floor(txn.length / this.MAX_APDU_SIZE);
-    for (let i = 0; i < txFullChunks; i++) {
-      const data = txn.slice(i*this.MAX_APDU_SIZE, (i+1)*this.MAX_APDU_SIZE);
-      await this.transport.send(this.CLA, this.INS_SIGN_TRANSACTION, SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK, 0x00, data);
+    let remainingData = txn.slice(0); // copy
+    let response;
+    while (remainingData.length > 0) {
+      const thisChunk = remainingData.slice(0, this.MAX_APDU_SIZE);
+      remainingData = remainingData.slice(this.MAX_APDU_SIZE);
+      response = await this.transport.send(
+        this.CLA,
+        this.INS_SIGN_TRANSACTION,
+        remainingData.length > 0
+          ? SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK
+          : SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK_LAST,
+        0x00,
+        thisChunk,
+      );
     }
 
-    const lastOffset = Math.floor(txn.length / this.MAX_APDU_SIZE) * this.MAX_APDU_SIZE;
-    const lastData = txn.slice(lastOffset, lastOffset+this.MAX_APDU_SIZE);
-    const transactionHashData = await this.transport.send(this.CLA, this.INS_SIGN_TRANSACTION, SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK_LAST, 0x00, lastData);
-    const responseHash = transactionHashData.slice(0, 32);
-
+    const responseHash = response.slice(0, 32);
     const expectedHash = Buffer.from(createHash('sha256').update(txn).digest());
     if (!responseHash.equals(expectedHash)) {
       throw "Ledger reported a hash that does not match the expected transaction hash!";
