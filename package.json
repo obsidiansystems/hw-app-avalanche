@@ -2,6 +2,7 @@
   "name": "@obsidiansystems/hw-app-avalanche",
   "version": "0.1.0",
   "description": "Ledger Hardware Wallet Avalanche API",
+  "license": "MIT",
   "keywords": [
     "Ledger",
     "LedgerWallet",
