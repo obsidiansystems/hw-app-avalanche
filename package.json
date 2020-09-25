@@ -1,6 +1,6 @@
 {
   "name": "@obsidiansystems/hw-app-avalanche",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Ledger Hardware Wallet Avalanche API",
   "license": "MIT",
   "keywords": [
@@ -31,13 +31,13 @@
     "jest": "^26.4.1"
   },
   "devDependencies": {
-    "flow-bin": "^0.118.0",
     "babel-cli": "^6.26.0",
     "babel-eslint": "^8.0.2",
     "babel-preset-env": "^1.7.0",
     "babel-preset-flow": "^6.23.0",
     "babel-preset-react": "^6.24.1",
     "babel-preset-stage-0": "^6.24.1",
+    "flow-bin": "^0.118.0",
     "flow-copy-source": "^2.0.8",
     "flow-mono-cli": "^1.5.0",
     "flow-typed": "^2.6.1",
