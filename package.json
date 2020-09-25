@@ -24,7 +24,6 @@
   },
   "main": "lib/Avalanche.js",
   "module": "lib/Avalanche.js",
-  "license": "Apache-2.0",
   "dependencies": {
     "@ledgerhq/hw-transport": "^5.9.0",
     "bip32-path": "0.4.2",
