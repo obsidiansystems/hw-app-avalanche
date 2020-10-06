@@ -151,13 +151,15 @@ export default class Avalanche {
    * const signatures = await avalanche.signTransaction(
    *   BIPPath.fromString("44'/9000'/0'"),
    *   [BIPPath.fromString("0/0")],
-   *   Buffer.from("...", "hex"));
+   *   Buffer.from("...", "hex"),
+   *   BIPPath.fromString("44'/9000'/0'/0'/0'"));
    * );
    */
   async signTransaction(
     derivationPathPrefix: BIPPath,
     derivationPathSuffixes: Array<BIPPath>,
-    txn: Buffer
+    txn: Buffer,
+    changePath: ?BIPPath
   ): Promise<{hash: Buffer, signatures: Map<string, Buffer>}> {
 
     const SIGN_TRANSACTION_SECTION_PREAMBLE            = 0x00;
@@ -170,8 +172,15 @@ export default class Avalanche {
       this.uInt8Buffer(derivationPathSuffixes.length),
       this.encodeBip32Path(derivationPathPrefix)
     ]);
-
-    await this.transport.send(this.CLA, this.INS_SIGN_TRANSACTION, SIGN_TRANSACTION_SECTION_PREAMBLE, 0x00, preamble);
+    if (changePath != null) {
+      const preamble_ = Buffer.concat([
+        preamble,
+        this.encodeBip32Path(changePath)
+      ]);
+      await this.transport.send(this.CLA, this.INS_SIGN_TRANSACTION, SIGN_TRANSACTION_SECTION_PREAMBLE, 0x01, preamble_);
+    } else {
+      await this.transport.send(this.CLA, this.INS_SIGN_TRANSACTION, SIGN_TRANSACTION_SECTION_PREAMBLE, 0x00, preamble);
+    }
 
     let remainingData = txn.slice(0); // copy
     let response;
