@@ -1,6 +1,6 @@
 {
   "name": "@obsidiansystems/hw-app-avalanche",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "description": "Ledger Hardware Wallet Avalanche API",
   "license": "MIT",
   "keywords": [
@@ -27,6 +27,7 @@
   "dependencies": {
     "@ledgerhq/hw-transport": "^5.9.0",
     "bip32-path": "0.4.2",
+    "create-hash": "1.2.0",
     "jest": "^26.4.1"
   },
   "devDependencies": {

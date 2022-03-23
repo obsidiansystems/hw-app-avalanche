@@ -2,6 +2,7 @@
 
 import type Transport from "@ledgerhq/hw-transport";
 import BIPPath from "bip32-path";
+import createHash from 'create-hash';
 
 /**
  * Avalanche API
@@ -23,6 +24,7 @@ export default class Avalanche {
   INS_PROMPT_PUBLIC_KEY = 0x02;
   INS_PROMPT_EXT_PUBLIC_KEY = 0x03;
   INS_SIGN_HASH = 0x04;
+  INS_SIGN_TRANSACTION = 0x05;
 
   constructor(
     transport: Transport<*>,
@@ -40,6 +42,7 @@ export default class Avalanche {
           "getWalletExtendedPublicKey",
           "getWalletId",
           "signHash",
+          "signTransaction",
         ],
         scrambleKey
       );
@@ -101,7 +104,7 @@ export default class Avalanche {
   }
 
   /**
-   * Sign a hash with a given BIP-32 path.
+   * Sign a hash with a given set of BIP-32 paths.
    *
    * @param derivationPathPrefix a BIP-32 path that will act as the prefix to all other signing paths.
    * @param derivationPathSuffixes an array of BIP-32 path suffixes that will be
@@ -133,16 +136,83 @@ export default class Avalanche {
       throw "Ledger reported a hash that does not match the input hash!";
     }
 
-    let resultMap: Map<string, Buffer> = new Map();
-    for (let ix = 0; ix < derivationPathSuffixes.length; ix++) {
-      const suffix = derivationPathSuffixes[ix];
-      this.logger("Signing with " + suffix.toString(true));
-      const message: Buffer = this.encodeBip32Path(suffix);
-      const isLastMessage: Boolean = ix >= derivationPathSuffixes.length - 1;
-      const signatureData = await this.transport.send(this.CLA, this.INS_SIGN_HASH, isLastMessage ? 0x81 : 0x01, 0x00, message);
-      resultMap.set(suffix.toString(true), signatureData.slice(0, -2));
+    return this._collectSignaturesFromSuffixes(derivationPathSuffixes, this.INS_SIGN_HASH, 0x01, 0x81);
+  }
+
+  /**
+   * Sign a transaction with a given set of BIP-32 paths.
+   *
+   * @param derivationPathPrefix a BIP-32 path that will act as the prefix to all other signing paths.
+   * @param derivationPathSuffixes an array of BIP-32 path suffixes that will be
+   *                               appended to the prefix to form the final path for signing.
+   * @param txn binary of the transaction
+   * @return an object with a hash of the transaction and a map of path suffixes (as strings) to signature buffers
+   * @example
+   * const signatures = await avalanche.signTransaction(
+   *   BIPPath.fromString("44'/9000'/0'"),
+   *   [BIPPath.fromString("0/0")],
+   *   Buffer.from("...", "hex"),
+   *   BIPPath.fromString("44'/9000'/0'/0'/0'"));
+   * );
+   */
+  async signTransaction(
+    derivationPathPrefix: BIPPath,
+    derivationPathSuffixes: Array<BIPPath>,
+    txn: Buffer,
+    changePath: ?BIPPath
+  ): Promise<{hash: Buffer, signatures: Map<string, Buffer>}> {
+
+    const SIGN_TRANSACTION_SECTION_PREAMBLE            = 0x00;
+    const SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK       = 0x01;
+    const SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK_LAST  = 0x81;
+    const SIGN_TRANSACTION_SECTION_SIGN_WITH_PATH      = 0x02;
+    const SIGN_TRANSACTION_SECTION_SIGN_WITH_PATH_LAST = 0x82;
+
+    const preamble = Buffer.concat([
+      this.uInt8Buffer(derivationPathSuffixes.length),
+      this.encodeBip32Path(derivationPathPrefix)
+    ]);
+    if (changePath != null) {
+      const preamble_ = Buffer.concat([
+        preamble,
+        this.encodeBip32Path(changePath)
+      ]);
+      await this.transport.send(this.CLA, this.INS_SIGN_TRANSACTION, SIGN_TRANSACTION_SECTION_PREAMBLE, 0x01, preamble_);
+    } else {
+      await this.transport.send(this.CLA, this.INS_SIGN_TRANSACTION, SIGN_TRANSACTION_SECTION_PREAMBLE, 0x00, preamble);
+    }
+
+    let remainingData = txn.slice(0); // copy
+    let response;
+    while (remainingData.length > 0) {
+      const thisChunk = remainingData.slice(0, this.MAX_APDU_SIZE);
+      remainingData = remainingData.slice(this.MAX_APDU_SIZE);
+      response = await this.transport.send(
+        this.CLA,
+        this.INS_SIGN_TRANSACTION,
+        remainingData.length > 0
+          ? SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK
+          : SIGN_TRANSACTION_SECTION_PAYLOAD_CHUNK_LAST,
+        0x00,
+        thisChunk,
+      );
+    }
+
+    const responseHash = response.slice(0, 32);
+    const expectedHash = Buffer.from(createHash('sha256').update(txn).digest());
+    if (!responseHash.equals(expectedHash)) {
+      throw "Ledger reported a hash that does not match the expected transaction hash!";
+    }
+
+    return {
+      hash: responseHash,
+      signatures: await this._collectSignaturesFromSuffixes(
+        derivationPathSuffixes,
+        this.INS_SIGN_TRANSACTION,
+        SIGN_TRANSACTION_SECTION_SIGN_WITH_PATH,
+        SIGN_TRANSACTION_SECTION_SIGN_WITH_PATH_LAST,
+      )
     };
-    return resultMap;
   }
 
   /**
@@ -207,6 +277,18 @@ export default class Avalanche {
     return result.slice(0, -2);
   }
 
+  async _collectSignaturesFromSuffixes(suffixes: Array<BIPPath>, ins: int, p1NotDone: int, p1Done: int) {
+    let resultMap: Map<string, Buffer> = new Map();
+    for (let ix = 0; ix < suffixes.length; ix++) {
+      const suffix = suffixes[ix];
+      this.logger("Signing with " + suffix.toString(true));
+      const message: Buffer = this.encodeBip32Path(suffix);
+      const isLastMessage: Boolean = ix >= suffixes.length - 1;
+      const signatureData = await this.transport.send(this.CLA, ins, isLastMessage ? p1Done : p1NotDone, 0x00, message);
+      resultMap.set(suffix.toString(true), signatureData.slice(0, -2));
+    };
+    return resultMap;
+  }
 
   uInt8Buffer(uint8: int): Buffer {
     let buff = Buffer.alloc(1);
