@@ -1,5 +1,3 @@
-//@flow
-
 import type Transport from "@ledgerhq/hw-transport";
 import BIPPath from "bip32-path";
 import createHash from 'create-hash';
@@ -12,8 +10,8 @@ import createHash from 'create-hash';
  * const avalanche = new Avalanche(transport);
  */
 export default class Avalanche {
-  transport: Transport<*>;
-  logger: (msg: string) => undefined;
+  transport: Transport;
+  logger: (msg: string) => void;
 
   CLA = 0x80;
   MAX_APDU_SIZE = 230;
@@ -27,9 +25,9 @@ export default class Avalanche {
   INS_SIGN_TRANSACTION = 0x05;
 
   constructor(
-    transport: Transport<*>,
+    transport: Transport,
     scrambleKey: string = "Avalanche",
-    logger: (msg: string) => undefined = console.error,
+    logger: (msg: string) => void = console.error,
   ) {
     this.transport = transport;
     this.logger = logger;
@@ -159,7 +157,7 @@ export default class Avalanche {
     derivationPathPrefix: BIPPath,
     derivationPathSuffixes: Array<BIPPath>,
     txn: Buffer,
-    changePath: ?BIPPath
+    changePath?: BIPPath
   ): Promise<{hash: Buffer, signatures: Map<string, Buffer>}> {
 
     const SIGN_TRANSACTION_SECTION_PREAMBLE            = 0x00;
@@ -172,7 +170,7 @@ export default class Avalanche {
       this.uInt8Buffer(derivationPathSuffixes.length),
       this.encodeBip32Path(derivationPathPrefix)
     ]);
-    if (changePath != null) {
+    if (changePath != undefined && changePath != null) {
       const preamble_ = Buffer.concat([
         preamble,
         this.encodeBip32Path(changePath)
@@ -277,7 +275,7 @@ export default class Avalanche {
     return result.slice(0, -2);
   }
 
-  async _collectSignaturesFromSuffixes(suffixes: Array<BIPPath>, ins: int, p1NotDone: int, p1Done: int) {
+  async _collectSignaturesFromSuffixes(suffixes: Array<BIPPath>, ins: number, p1NotDone: number, p1Done: number) {
     let resultMap: Map<string, Buffer> = new Map();
     for (let ix = 0; ix < suffixes.length; ix++) {
       const suffix = suffixes[ix];
@@ -290,13 +288,13 @@ export default class Avalanche {
     return resultMap;
   }
 
-  uInt8Buffer(uint8: int): Buffer {
+  uInt8Buffer(uint8: number): Buffer {
     let buff = Buffer.alloc(1);
     buff.writeUInt8(uint8);
     return buff;
   }
 
-  uInt32BEBuffer(uint32: int): Buffer {
+  uInt32BEBuffer(uint32: number): Buffer {
     let buff = Buffer.alloc(4);
     buff.writeUInt32BE(uint32);
     return buff;
