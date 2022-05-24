@@ -13,45 +13,32 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/obsidiansystems/hw-app-avalanche"
+    "url": "git+https://github.com/obsidiansystems/hw-app-avalanche"
   },
   "bugs": {
     "url": "https://github.com/obsidiansystems/hw-app-avalanche/issues"
   },
-  "homepage": "https://github.com/obsidiansystems/hw-app-avalanche",
+  "homepage": "https://github.com/obsidiansystems/hw-app-avalanche#readme",
   "publishConfig": {
     "access": "public"
   },
   "main": "lib/Avalanche.js",
-  "module": "lib/Avalanche.js",
+  "module": "lib-es/Avalanche.js",
+  "types": "lib/Avalanche.d.ts",
   "dependencies": {
-    "@ledgerhq/hw-transport": "^5.9.0",
+    "@ledgerhq/hw-transport": "^6.3.0",
     "bip32-path": "0.4.2",
     "create-hash": "1.2.0",
     "jest": "^26.4.1"
   },
-  "devDependencies": {
-    "babel-cli": "^6.26.0",
-    "babel-eslint": "^8.0.2",
-    "babel-preset-env": "^1.7.0",
-    "babel-preset-flow": "^6.23.0",
-    "babel-preset-react": "^6.24.1",
-    "babel-preset-stage-0": "^6.24.1",
-    "flow-bin": "^0.118.0",
-    "flow-copy-source": "^2.0.8",
-    "flow-mono-cli": "^1.5.0",
-    "flow-typed": "^2.6.1",
-    "lerna": "3.16.5",
-    "prettier": "^1.18.2",
-    "uglify-js": "^3.6.1"
-  },
   "scripts": {
-    "flow": "flow",
-    "clean": "bash script/clean.sh",
-    "build": "bash script/build.sh",
-    "prepare": "bash script/build.sh",
-    "watch": "bash script/watch.sh",
-    "doc": "bash script/doc.sh",
-    "prepack": "bash script/build.sh"
+    "build": "tsc && tsc -m ES6 --outDir lib-es",
+    "prepare": "tsc && tsc -m ES6 --outDir lib-es"
+  },
+  "devDependencies": {
+    "@types/node": "^16.10.3",
+    "@types/jest": "^26.0.24",
+    "@ledgerhq/hw-transport-mocker": "^6.3.0",
+    "typescript": "^4.4.3"
   }
 }
